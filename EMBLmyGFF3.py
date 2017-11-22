@@ -231,6 +231,23 @@ class EMBL( object ):
             output += str(data)
             return "\n" + output + suffix
         
+        def split_string(s, char_count):
+            output_s = "\n"
+            current_line = "RA   "
+            for item in s.split(', '):
+                if len(item) + len(current_line) >= char_count-2:
+                    output_s += current_line + '\n'
+                    current_line = "RA   " + item
+                elif current_line == "RA   ":
+                    current_line += item
+                else:
+                    current_line += ', ' + item
+            if len(current_line) > 5:
+                output_s += current_line
+            return output_s + ';'
+
+        if prefix == "RA":
+            return split_string(data[0], 75)
 
         # List Case
         previousChunck=""
@@ -241,16 +258,16 @@ class EMBL( object ):
                     currentChunck = item + previousChunck
                     # If item of the list is too long we have to split it as well
                     if len(currentChunck) > 75:
-                        output,lastLine=self._splitStringMultiline(output, currentChunck, quoted)
+                        output,lastLine=self._splitStringMultiline(output, currentChunck, quoted, char_count=73)
                         previousChunck="\n"+lastLine
-
                     else:
                         previousChunck=currentChunck
 
                     #Now add separator between chuncks
-                    if len(previousChunck) >= 75 : # >= Because when previousChunck is last line and is 75 char length, adding the \n will give string longer than 75
-                        output+=previousChunck+"\n"
-                        previousChunck="%s " % sep
+                    if len(previousChunck) > 75 : # >= Because when previousChunck is last line and is 75 char length, adding the \n will give string longer than 75
+
+                        output, lastLine=self._splitStringMultiline(output, previousChunck, quoted, char_count=71)
+                        previousChunck="%s " % lastLine + sep
                     else:
                         previousChunck+="%s " % sep
 
@@ -258,18 +275,24 @@ class EMBL( object ):
 
         # String case
         else:
-            #logging.error("!!!!!!!!!!!!!!!String case!!!!!!!!!")
             output,lastLine=self._splitStringMultiline(output, data, quoted)
-            if len(lastLine) == 75:
-                output+=lastLine+"\n"+sep
-            else:    
-                output+=lastLine+sep
-        
+            if len(output) == 0: # only one line
+                output += lastLine + sep
+            else: # assume no string longer than 150
+                output += "\n" + lastLine + sep
+            #logging.error("!!!!!!!!!!!!!!!String case!!!!!!!!!")
+            #output,lastLine=self._splitStringMultiline(output, data, quoted)
+            #if len(lastLine) >= 75:
+            #    output+=lastLine+"\n"+sep
+            #elif len(lastLine) == 0:
+            #    output += sep
+            #else:    
+            #    output+=lastLine+sep
+
         #Check if we have output. If not we have to avoid the strip at the end
         doNotStrip=False
         if not output: 
             doNotStrip = True
-
         #Last step: add prefix at each line
         cleanOutput=""
         if output:
@@ -289,33 +312,34 @@ class EMBL( object ):
     
     # This method allow to wrap a sting at a size of 75 taking care of quote
     # It return back the result in different part: the last line and everything before if exists.
-    def _splitStringMultiline(self, output, data, quoted):
+    def _splitStringMultiline(self, output, data, quoted, char_count=75):
         lastLine=""
         string = " ".join(data.split("\n"))
-        output += "\"" if quoted else ""
+        #output += "\"" if quoted else ""
+        output += ""
 
         roundl=0
         while string:
             roundl+=1
             if roundl == 1: #Within the round 1 the indentation already exists
                 if quoted: 
-                    if len(string) + 2 <= 75: #peculiar case quotes plus string exactly 75
+                    if len(string) + 2 <= char_count: #peculiar case quotes plus string exactly 75
                         lastLine += "\"" 
                         lastLine = string
                         string = string[len(string):] 
                     else:# len(string) + 1 > 75: # + 1 quote
-                        splitLoc = self._splitWordsMax(string,75)
+                        splitLoc = self._splitWordsMax(string,char_count)
                         line = string[:splitLoc]
                         string = string[len(line):]
                         string=string.strip() # remove white space
                         output += "\"" 
                         output +=line
                 else:
-                    if len(string) <= 75:
+                    if len(string) <= char_count:
                         lastLine = string
                         string = string[len(string):] 
                     else: # len(string) > 75:
-                        splitLoc = self._splitWordsMax(string,75)
+                        splitLoc = self._splitWordsMax(string,char_count)
                         line = string[:splitLoc]
                         string = string[len(line):]
                         string=string.strip() # remove white space
@@ -323,8 +347,8 @@ class EMBL( object ):
 
             else: #Not the first round
                 if quoted: 
-                    if len(string)+1 > 75:
-                        splitLoc = self._splitWordsMax(string,75) 
+                    if len(string)+1 > char_count:
+                        splitLoc = self._splitWordsMax(string,char_count) 
                         line = string[:splitLoc]
                         string = string[len(line):]
                         string=string.strip() # remove white space
@@ -333,8 +357,8 @@ class EMBL( object ):
                         lastLine += string
                         string = string[len(string):]
                 else:
-                    if len(string) > 75:
-                        splitLoc = self._splitWordsMax(string,75)
+                    if len(string) > char_count:
+                        splitLoc = self._splitWordsMax(string,char_count)
                         line = string[:splitLoc]
                         string = string[len(line):]
                         string=string.strip() # remove white space
@@ -354,10 +378,10 @@ class EMBL( object ):
         words = string.split()
         newString=words.pop(0)
         position = len(newString)
-        if position >= 75:
-            return 75
+        if position >= valueMax:
+            return valueMax
 
-        while position <= 75 :
+        while position <= valueMax:
             positionBefore=position
             newString += " "+words.pop(0)
             position = len(newString)
@@ -503,7 +527,7 @@ class EMBL( object ):
         output += "\nXX"
         description=""
         if hasattr(self.record, "description"):
-            description = self.record.description
+            description = self.record.id
         else:
             logging.error("The first row is missing within the gff3 file.")
             description = "xxx";
@@ -647,11 +671,10 @@ class EMBL( object ):
                 output += self._multiline("RG", ref['group'])
             if ref['authors']:                                      # RA - reference author(s)        (>=0 per entry)
                 output += self._multiline("RA", ref['authors'], sep=", ", suffix=";")
-             
             if ref['title'] == ";":                                 # RT - reference title            (>=1 per entry)
                 output += self._multiline("RT", ref['title'], quoted=False)
             else:
-                output += self._multiline("RT", ref['title'], quoted=True)
+                output += self._multiline("RT", ref['title'], suffix=';', quoted=True)
             # TODO: There are lots of recommended formatting for the references,
             #       but I won't bother implementing them right now.
             output += self._multiline("RL", ref['location'])        # RL - reference location         (>=1 per entry)
@@ -746,16 +769,16 @@ class EMBL( object ):
         
         output = ""
         locus_tag_prefix="|".join(self.locus_tag if type(self.locus_tag) == type([]) else [self.locus_tag])
-
         for i, feature in enumerate(self.record.features):
             
             #manage locus_tag
             locus_tag=None
             if feature.type.lower() != "source" and feature.type.lower() != "gap":
-                global CPT_LOCUS_GLB
-                CPT_LOCUS_GLB+=1
-                locus_tag_suffix="locus"+str(CPT_LOCUS_GLB)
-                
+                #global CPT_LOCUS_GLB
+                #CPT_LOCUS_GLB+=1
+                #locus_tag_suffix="locus"+str(CPT_LOCUS_GLB)
+                locus_tag_suffix = "{}_{}".format(self.record.id, feature.id.split('_')[1])
+
                 # replace locus_tag_suffix by the value of the locus_tag qualifier if this one exists
                 for qualifier in feature.qualifiers:
                     if 'locus_tag' == qualifier.lower():
@@ -763,7 +786,6 @@ class EMBL( object ):
                 
                 # create locus tag from locus_tag_suffix and accession      
                 locus_tag = "%s_%s" % (locus_tag_prefix, locus_tag_suffix)
-
             f = Feature(feature, self.record.seq, locus_tag, self.transl_table, translate=self.translate, feature_definition_dir=FEATURE_DIR, qualifier_definition_dir=QUALIFIER_DIR, level=1, reorder_gene_features = self.interleave_genes, force_unknown_features = self.force_unknown_features, force_uncomplete_features = self.force_uncomplete_features)
             
             if not self.keep_duplicates:
@@ -1120,16 +1142,16 @@ class EMBL( object ):
         """
         Sets the translation table, or parses it from the current record.
         """
-        if transl_table:
+        if "transl_table" in self.record.features[0].qualifiers:
+            self.transl_table = int(self.record.features[0].qualifiers['transl_table'][0])
+        elif transl_table:
             self.transl_table = transl_table
-        #elif hasattr(self.record, "transl_table"):
-        #    self.transl_table = self.record.transl_table
         elif not hasattr(self, "transl_table"):
             self.transl_table = ""
         
         if self.verify:
-            self.transl_table = self._verify( self.transl_table,       "transl_table")
-    
+            self.transl_table = self._verify( self.transl_table, "transl_table")
+
     def set_translation(self, translate = False):
         """
         Sets flag whether to translate CDS features.
@@ -1219,6 +1241,7 @@ if __name__ == '__main__':
     parser.add_argument("-g", "--organelle", default=None, help="Sample organelle.")
     parser.add_argument("-i", "--locus_tag", help="Locus tag prefix used for the features.")
     parser.add_argument("-k", "--keyword", default=[], nargs="+", help="Keywords for the entry.")
+    parser.add_argument("--description", default=None, help="Description that will go for every gene")
     parser.add_argument("-l", "--classification", help="Organism classification e.g \"Eukaryota; Opisthokonta; Metazoa;\". If not set, will be retrieved online on the NCBI taxonomy DB based on the species name or taxid.")
     parser.add_argument("-m", "--molecule_type", default=None, help="Molecule type of the sample.", choices=["genomic DNA", "genomic RNA", "mRNA", "tRNA", "rRNA", "other RNA", "other DNA", "transcribed RNA", "viral cRNA", "unassigned DNA", "unassigned RNA"])
     parser.add_argument("-o", "--output", default=None, help="Output filename.")
@@ -1280,19 +1303,17 @@ if __name__ == '__main__':
         sys.stderr.write(shameless_plug)
 
     for record in GFF.parse(infile, base_dict=seq_dict):
-        
         writer = EMBL( record, True )
 
         #To set up first
         writer.set_email(args.email) # has to be before set_species
         writer.set_species( args.species ) # has to be before set_classification   
-
         #Set up the rest
         writer.set_accession( args.accession )
         writer.set_classification( args.classification )
         writer.set_created( args.created )
         writer.set_data_class( args.data_class )
-        writer.set_description()  
+        writer.set_description( args.description )  
         writer.set_force_uncomplete_features( args.force_uncomplete_features )
         writer.set_force_unknown_features( args.force_unknown_features )
         writer.set_interleave_genes( args.interleave_genes )
